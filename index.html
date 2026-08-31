@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>五子棋</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="game-container">
+    <h1>⚫ 五子棋 ⚪</h1>
+
+    <div class="status-bar">
+      <div id="status" class="status">
+        <span id="status-dot" class="dot black-dot"></span>
+        <span id="status-text">黑棋落子</span>
+      </div>
+      <div id="score" class="score">黑 <b id="black-score">0</b> : <b id="white-score">0</b> 白</div>
+    </div>
+
+    <div class="board-wrap">
+      <canvas id="board"></canvas>
+    </div>
+
+    <div class="controls">
+      <div class="mode-group" id="mode-group" title="游戏模式">
+        <button class="mode-btn" data-mode="pvp">👥 双人</button>
+        <button class="mode-btn" data-mode="easy">😌 简单</button>
+        <button class="mode-btn active" data-mode="medium">😊 中等</button>
+        <button class="mode-btn" data-mode="hard">😈 困难</button>
+      </div>
+      <div class="btn-row">
+        <button id="undo" title="悔棋（人机模式会同时撤回 AI 一步）">↩ 悔棋</button>
+        <button id="restart" class="primary">🔄 重新开始</button>
+      </div>
+    </div>
+
+    <div id="result-modal" class="modal hidden">
+      <div class="modal-box">
+        <div id="result-title" class="result-title"></div>
+        <div id="result-sub" class="result-sub"></div>
+        <button id="play-again" class="primary">再来一局</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
