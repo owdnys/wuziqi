@@ -1,49 +1,168 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#1f3d2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <title>五子棋</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="game-container">
-    <h1>⚫ 五子棋 ⚪</h1>
+  <div class="app">
+    <!-- ===== 顶栏 ===== -->
+    <header class="topbar">
+      <h1><span class="stone-ico black"></span>五子棋<span class="stone-ico white"></span></h1>
+      <div class="top-actions">
+        <button id="btn-notation" class="icon-btn" title="棋谱记录">📋</button>
+        <button id="btn-theme" class="icon-btn" title="切换主题">🌗</button>
+        <button id="btn-settings" class="icon-btn" title="设置">⚙️</button>
+      </div>
+    </header>
 
-    <div class="status-bar">
-      <div id="status" class="status">
+    <!-- ===== 状态栏 ===== -->
+    <div class="statusbar">
+      <div class="status">
         <span id="status-dot" class="dot black-dot"></span>
         <span id="status-text">黑棋落子</span>
       </div>
-      <div id="score" class="score">黑 <b id="black-score">0</b> : <b id="white-score">0</b> 白</div>
+      <div class="meta">
+        <span id="move-count" class="pill">第 1 手</span>
+        <span id="timer" class="pill">⏱ 00:00</span>
+        <span id="score" class="pill">黑 0 : 0 白</span>
+      </div>
     </div>
 
-    <div class="board-wrap">
+    <!-- ===== 棋盘 ===== -->
+    <main class="board-wrap" id="board-wrap">
       <canvas id="board"></canvas>
-    </div>
+      <div id="thinking" class="float-tip hidden"><span class="spinner"></span>AI 思考中</div>
+      <div id="hint-tip" class="float-tip hint hidden">💡 推荐落点</div>
+    </main>
 
+    <!-- ===== 控制区 ===== -->
     <div class="controls">
-      <div class="mode-group" id="mode-group" title="游戏模式">
+      <div class="mode-group" id="mode-group">
         <button class="mode-btn" data-mode="pvp">👥 双人</button>
-        <button class="mode-btn" data-mode="easy">😌 简单</button>
-        <button class="mode-btn active" data-mode="medium">😊 中等</button>
-        <button class="mode-btn" data-mode="hard">😈 困难</button>
+        <button class="mode-btn" data-mode="1">入门</button>
+        <button class="mode-btn" data-mode="2">简单</button>
+        <button class="mode-btn active" data-mode="3">中等</button>
+        <button class="mode-btn" data-mode="4">困难</button>
+        <button class="mode-btn" data-mode="5">大师</button>
       </div>
       <div class="btn-row">
-        <button id="undo" title="悔棋（人机模式会同时撤回 AI 一步）">↩ 悔棋</button>
-        <button id="restart" class="primary">🔄 重新开始</button>
+        <button id="btn-undo" title="悔棋 (Ctrl+Z)">↩ 悔棋</button>
+        <button id="btn-redo" title="重做 (Ctrl+Y)">↪ 重做</button>
+        <button id="btn-hint" title="提示一手">💡 提示</button>
+        <button id="btn-restart" class="primary" title="重新开局 (R)">🔄 重开</button>
       </div>
     </div>
+  </div>
 
-    <div id="result-modal" class="modal hidden">
-      <div class="modal-box">
-        <div id="result-title" class="result-title"></div>
-        <div id="result-sub" class="result-sub"></div>
+  <!-- ===== 遮罩 ===== -->
+  <div id="overlay" class="overlay hidden"></div>
+
+  <!-- ===== 设置抽屉 ===== -->
+  <aside id="settings" class="drawer" aria-hidden="true">
+    <div class="drawer-head">
+      <h2>⚙️ 设置</h2>
+      <button class="icon-btn" data-close>✕</button>
+    </div>
+    <div class="drawer-body">
+      <section class="group">
+        <h3>对局规则</h3>
+        <label class="row">
+          <span>禁手规则<small>黑棋禁止三三 / 四四 / 长连</small></span>
+          <input type="checkbox" id="opt-forbidden" class="switch">
+        </label>
+        <label class="row">
+          <span>棋盘大小</span>
+          <select id="opt-size">
+            <option value="13">13 × 13</option>
+            <option value="15" selected>15 × 15</option>
+            <option value="19">19 × 19</option>
+          </select>
+        </label>
+        <label class="row">
+          <span>我执<small>人机模式下你走哪一方</small></span>
+          <select id="opt-side">
+            <option value="1" selected>黑棋（先手）</option>
+            <option value="2">白棋（后手）</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="group">
+        <h3>显示与辅助</h3>
+        <label class="row"><span>手数序号<small>棋子上显示落子顺序</small></span><input type="checkbox" id="opt-numbers" class="switch"></label>
+        <label class="row"><span>最后一手标记</span><input type="checkbox" id="opt-lastmark" class="switch" checked></label>
+        <label class="row"><span>禁手点提示<small>标出黑棋的禁手位置</small></span><input type="checkbox" id="opt-forbidmark" class="switch"></label>
+        <label class="row"><span>显示坐标</span><input type="checkbox" id="opt-coords" class="switch" checked></label>
+        <label class="row"><span>落子音效</span><input type="checkbox" id="opt-sound" class="switch" checked></label>
+      </section>
+
+      <section class="group">
+        <h3>计时</h3>
+        <label class="row">
+          <span>计时模式</span>
+          <select id="opt-timer-mode">
+            <option value="none" selected>不限时</option>
+            <option value="step">每步限时</option>
+            <option value="total">每方总时长</option>
+          </select>
+        </label>
+        <label class="row" id="row-timer-sec" style="display:none">
+          <span>时长（秒）</span>
+          <input type="number" id="opt-timer-sec" min="5" max="3600" step="5" value="30" class="num-input">
+        </label>
+      </section>
+
+      <section class="group">
+        <h3>对局数据</h3>
+        <div class="btn-grid">
+          <button id="btn-save">💾 保存对局</button>
+          <button id="btn-load">📂 载入对局</button>
+          <button id="btn-export">⬇️ 导出棋谱</button>
+          <button id="btn-import">⬆️ 导入棋谱</button>
+          <button id="btn-clear" class="danger">🗑️ 清除存档</button>
+        </div>
+        <input type="file" id="file-input" accept=".json,.txt" hidden>
+      </section>
+
+      <section class="group about">
+        <p>禁手规则采用专业五子棋标准：黑棋走出三三、四四或长连即判负，白棋无禁手。大师级 AI 采用迭代加深搜索 + VCF 算杀，单步思考约 3~5 秒。</p>
+      </section>
+    </div>
+  </aside>
+
+  <!-- ===== 棋谱抽屉 ===== -->
+  <aside id="notation" class="drawer" aria-hidden="true">
+    <div class="drawer-head">
+      <h2>📋 棋谱</h2>
+      <button class="icon-btn" data-close>✕</button>
+    </div>
+    <div class="drawer-body">
+      <div class="notation-info" id="notation-info">尚无落子</div>
+      <div class="notation-list" id="notation-list"></div>
+      <div class="btn-grid">
+        <button id="btn-copy-notation">📄 复制棋谱</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ===== 结果弹窗 ===== -->
+  <div id="result-modal" class="modal hidden">
+    <div class="modal-box">
+      <div id="result-title" class="result-title"></div>
+      <div id="result-sub" class="result-sub"></div>
+      <div class="modal-actions">
+        <button id="btn-review">查看棋盘</button>
         <button id="play-again" class="primary">再来一局</button>
       </div>
     </div>
   </div>
 
+  <script src="ai.js"></script>
   <script src="script.js"></script>
 </body>
 </html>
