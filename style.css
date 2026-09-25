@@ -394,6 +394,11 @@ canvas#board {
   white-space: nowrap;
 }
 .float-tip.hint { top: auto; bottom: 10px; background: rgba(217,164,65,.92); }
+.float-tip.warn {
+  background: rgba(217, 83, 79, .95);
+  box-shadow: 0 4px 18px rgba(217, 83, 79, .4);
+  font-weight: 700;
+}
 
 .spinner {
   width: 12px; height: 12px;

@@ -17,6 +17,8 @@
   const scoreEl = document.getElementById('score');
   const thinkingEl = document.getElementById('thinking');
   const hintTipEl = document.getElementById('hint-tip');
+  const forbidTipEl = document.getElementById('forbid-tip');
+  let forbidTipTimer = null;
   const btnPvp = document.getElementById('btn-pvp');
   const modal = document.getElementById('result-modal');
   const resultTitle = document.getElementById('result-title');
@@ -33,7 +35,6 @@
     board: [],
     current: BLACK,
     history: [],
-    redoStack: [],
     gameOver: false,
     winner: null,
     winLine: null,
@@ -49,6 +50,7 @@
 
   const opts = {
     forbidden: false,
+    forbiddenLose: true,
     numbers: false,
     lastmark: true,
     forbidmark: false,
@@ -353,16 +355,20 @@
 
     // 禁手（黑棋）
     if (opts.forbidden && player === BLACK && window.GomokuAI.isForbidden(state.board, state.size, r, c)) {
-      state.board[r][c] = BLACK;
-      state.history.push({ r, c, p: BLACK });
-      state.forbiddenLoss = true;
-      finishGame(WHITE, '禁手');
-      return;
+      if (opts.forbiddenLose !== false) {
+        // 严格模式：直接判负
+        state.board[r][c] = BLACK;
+        state.history.push({ r, c, p: BLACK });
+        state.forbiddenLoss = true;
+        finishGame(WHITE, '禁手');
+        return;
+      }
+      // 宽松模式：仅提示，仍允许落子
+      showFloatTip('⚠️ 这里是禁手点（三三 / 四四 / 长连）');
     }
 
     state.board[r][c] = player;
     state.history.push({ r, c, p: player });
-    state.redoStack.length = 0;
     state.hint = null;
     hintTipEl.classList.add('hidden');
     playSound('place');
@@ -418,21 +424,20 @@
 
   function undo() {
     if (state.busy) return;
-    let steps = isAI() ? 2 : 1;
+    const wantSteps = isAI() ? 2 : 1;
     let removed = 0;
-    while (state.history.length && removed < steps) {
+    while (state.history.length && removed < wantSteps) {
       const h = state.history.pop();
       state.board[h.r][h.c] = EMPTY;
-      state.redoStack.push(h);
       removed++;
     }
-    // 若撤销后仍轮到 AI，再多撤一步（让玩家能重新落子）
+    // 人机模式：撤销后若仍轮到 AI，再撤一步，保证轮到玩家
     if (isAI() && state.history.length) {
       const nxt = state.history.length % 2 === 0 ? BLACK : WHITE;
       if (nxt === state.aiSide && state.history.length) {
         const h = state.history.pop();
         state.board[h.r][h.c] = EMPTY;
-        state.redoStack.push(h);
+        removed++;
       }
     }
     state.gameOver = false;
@@ -445,17 +450,6 @@
     updateStatus(); draw(); saveAuto();
   }
 
-  function redo() {
-    if (state.busy || !state.redoStack.length) return;
-    const h = state.redoStack.pop();
-    state.board[h.r][h.c] = h.p;
-    state.history.push(h);
-    state.current = h.p === BLACK ? WHITE : BLACK;
-    const line = checkWin(h.r, h.c, h.p);
-    if (line) { state.winLine = line; finishGame(h.p, '五连'); return; }
-    updateStatus(); draw(); saveAuto();
-    maybeAIMove();
-  }
 
   function restart() {
     state.gameOver = false;
@@ -463,7 +457,6 @@
     state.winLine = null;
     state.forbiddenLoss = false;
     state.history = [];
-    state.redoStack = [];
     state.hint = null;
     state.hover = null;
     state.current = BLACK;
@@ -507,6 +500,15 @@
     updateStatus();
   }
 
+  // 棋盘上方浮动提示（禁手提醒等）
+  function showFloatTip(msg, ms) {
+    if (!forbidTipEl) return;
+    forbidTipEl.textContent = msg;
+    forbidTipEl.classList.remove('hidden');
+    clearTimeout(forbidTipTimer);
+    forbidTipTimer = setTimeout(() => forbidTipEl.classList.add('hidden'), ms || 2200);
+  }
+
   /* =========================================================
      六、提示
      ========================================================= */
@@ -538,6 +540,9 @@
       statusText.textContent = mine ? `轮到你（${who}）` : `${who}落子`;
     }
     moveCountEl.textContent = '第 ' + (state.history.length + 1) + ' 手';
+    // 悔棋按钮可用性
+    const undoBtn = document.getElementById('btn-undo');
+    if (undoBtn) undoBtn.disabled = state.busy || state.history.length === 0;
   }
 
   function updateScore() {
@@ -653,6 +658,8 @@
     document.getElementById('opt-blobs').checked = opts.bgBlobs !== false;
     document.getElementById('opt-follow').checked = opts.bgFollow !== false;
     document.getElementById('opt-forbidden').checked = opts.forbidden;
+    document.getElementById('opt-forbidden-lose').checked = opts.forbiddenLose !== false;
+    document.getElementById('row-forbidden-lose').style.opacity = opts.forbidden ? '1' : '0.45';
     document.getElementById('opt-numbers').checked = opts.numbers;
     document.getElementById('opt-lastmark').checked = opts.lastmark;
     document.getElementById('opt-forbidmark').checked = opts.forbidmark;
@@ -737,7 +744,6 @@
         state.size = data.size || 15;
             newBoard();
         state.history = [];
-        state.redoStack = [];
         for (const h of data.history) {
           if (!inB(h.r, h.c)) continue;
           state.board[h.r][h.c] = h.p;
@@ -980,7 +986,6 @@
   });
 
   document.getElementById('btn-undo').addEventListener('click', undo);
-  document.getElementById('btn-redo').addEventListener('click', redo);
   document.getElementById('btn-hint').addEventListener('click', showHint);
   document.getElementById('btn-restart').addEventListener('click', restart);
   document.getElementById('play-again').addEventListener('click', restart);
@@ -997,7 +1002,12 @@
   bindSwitch('opt-glass', 'glass', () => { applyGlass(); applyBg(); });
   bindSwitch('opt-blobs', 'bgBlobs', applyBg);
   bindSwitch('opt-follow', 'bgFollow', applyBg);
-  bindSwitch('opt-forbidden', 'forbidden');
+  bindSwitch('opt-forbidden', 'forbidden', () => {
+    // 禁手关闭时，「禁手判负」开关变灰
+    document.getElementById('row-forbidden-lose').style.opacity = opts.forbidden ? '1' : '0.45';
+    document.getElementById('opt-forbidden-lose').disabled = !opts.forbidden;
+  });
+  bindSwitch('opt-forbidden-lose', 'forbiddenLose');
   bindSwitch('opt-numbers', 'numbers');
   bindSwitch('opt-lastmark', 'lastmark');
   bindSwitch('opt-forbidmark', 'forbidmark');
@@ -1086,7 +1096,6 @@
     if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
     const k = e.key.toLowerCase();
     if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); undo(); }
-    else if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); redo(); }
     else if (k === 'r') restart();
     else if (k === 'h') showHint();
     else if (e.key === 'Escape') closeDrawers();
@@ -1118,6 +1127,8 @@
     if (state.mode !== 'pvp' && !DIFF_NAMES[state.mode]) state.mode = '3';
     updateDiffUI();
     boardSlider.update();
+    document.getElementById('opt-forbidden-lose').disabled = !opts.forbidden;
+    document.getElementById('row-forbidden-lose').style.opacity = opts.forbidden ? '1' : '0.45';
     state.timer.stepStart = Date.now();
     state.timer.lastTick = Date.now();
     fitCanvas();

@@ -38,6 +38,7 @@
       <canvas id="board"></canvas>
       <div id="thinking" class="float-tip hidden"><span class="spinner"></span>AI 思考中</div>
       <div id="hint-tip" class="float-tip hint hidden">💡 推荐落点</div>
+      <div id="forbid-tip" class="float-tip warn hidden">⚠️ 这里是禁手点</div>
     </main>
 
     <!-- ===== 控制区 ===== -->
@@ -91,7 +92,6 @@
       </div>
       <div class="btn-row">
         <button id="btn-undo" title="悔棋 (Ctrl+Z)">↩ 悔棋</button>
-        <button id="btn-redo" title="重做 (Ctrl+Y)">↪ 重做</button>
         <button id="btn-hint" title="提示一手">💡 提示</button>
         <button id="btn-restart" title="重新开局 (R)">🔄 重开</button>
       </div>
@@ -123,6 +123,10 @@
         <label class="row">
           <span>禁手规则<small>黑棋禁止三三 / 四四 / 长连</small></span>
           <input type="checkbox" id="opt-forbidden" class="switch">
+        </label>
+        <label class="row" id="row-forbidden-lose">
+          <span>禁手判负<small>关闭则仅提醒，不判负</small></span>
+          <input type="checkbox" id="opt-forbidden-lose" class="switch" checked>
         </label>
         <label class="row">
           <span>我执<small>人机模式下你走哪一方</small></span>
