@@ -17,12 +17,6 @@
   const scoreEl = document.getElementById('score');
   const thinkingEl = document.getElementById('thinking');
   const hintTipEl = document.getElementById('hint-tip');
-  const sliderEl = document.getElementById('difficulty');
-  const trackEl = document.getElementById('difficulty-track');
-  const fillEl = document.getElementById('difficulty-fill');
-  const thumbEl = document.getElementById('difficulty-thumb');
-  const diffNameEl = document.getElementById('diff-name');
-  const sliderLabels = document.getElementById('slider-labels');
   const btnPvp = document.getElementById('btn-pvp');
   const modal = document.getElementById('result-modal');
   const resultTitle = document.getElementById('result-title');
@@ -674,7 +668,8 @@
     try {
       localStorage.setItem(LS_SAVE, JSON.stringify({
         size: state.size, history: state.history, mode: state.mode,
-        aiSide: state.aiSide, blackWins: state.blackWins, whiteWins: state.whiteWins
+        aiSide: state.aiSide, lastAiLevel: state.lastAiLevel,
+        blackWins: state.blackWins, whiteWins: state.whiteWins
       }));
     } catch (e) {}
   }
@@ -684,14 +679,23 @@
       const raw = localStorage.getItem(LS_SAVE);
       if (!raw) return false;
       const data = JSON.parse(raw);
-      if (!data || !data.history || !data.history.length) return false;
-      state.size = data.size || 15;
-      state.mode = data.mode || '3';
-      state.aiSide = data.aiSide || WHITE;
-      state.blackWins = data.blackWins || 0;
-      state.whiteWins = data.whiteWins || 0;
+      if (!data) return false;
+
+      // 1) 设置类状态：始终恢复（棋盘大小 / 难度 / 执子 / 比分）
+      if (data.size) state.size = data.size;
+      if (data.mode) state.mode = data.mode;
+      if (data.aiSide) state.aiSide = data.aiSide;
+      if (typeof data.blackWins === 'number') state.blackWins = data.blackWins;
+      if (typeof data.whiteWins === 'number') state.whiteWins = data.whiteWins;
+      if (data.lastAiLevel) state.lastAiLevel = data.lastAiLevel;
+
+      // 2) 对局进度：有落子才恢复
       newBoard();
       state.history = [];
+      if (!data.history || !data.history.length) {
+        state.current = BLACK;
+        return true;
+      }
       for (const h of data.history) {
         if (!inB(h.r, h.c)) continue;
         state.board[h.r][h.c] = h.p;
@@ -731,8 +735,7 @@
         const data = JSON.parse(reader.result);
         if (!data.history || !Array.isArray(data.history)) throw new Error('文件格式不正确');
         state.size = data.size || 15;
-        document.getElementById('opt-size').value = String(state.size);
-        newBoard();
+            newBoard();
         state.history = [];
         state.redoStack = [];
         for (const h of data.history) {
@@ -803,11 +806,116 @@
     draw();
   });
 
-  /* ---------- 难度滑块（自定义：点击平滑滑动 / 拖动跟手 / 松手吸附档位） ---------- */
+  /* =========================================================
+     玻璃滑块工厂（点击平滑滑动 / 拖动跟手 / 松手吸附档位）
+     ========================================================= */
+  function createSlider(cfg) {
+    const root = document.getElementById(cfg.rootId);
+    const track = document.getElementById(cfg.trackId);
+    const fill = document.getElementById(cfg.fillId);
+    const thumb = document.getElementById(cfg.thumbId);
+    const labels = document.getElementById(cfg.labelsId);
+    const nameEl = document.getElementById(cfg.nameId);
+    const values = cfg.values;
+    const maxIdx = values.length - 1;
+    let dragging = false;
+    let pendingIdx = null;
+
+    const idxOf = (v) => { const i = values.indexOf(v); return i < 0 ? Math.round(maxIdx / 2) : i; };
+    const pctOf = (idx) => (maxIdx ? idx / maxIdx : 0);
+
+    function layout(pct) {
+      const trackW = track.clientWidth;
+      const tw = thumb.offsetWidth || 26;
+      const usable = Math.max(0, trackW - tw);
+      const x = tw / 2 + Math.min(1, Math.max(0, pct)) * usable;
+      thumb.style.left = x + 'px';
+      fill.style.width = x + 'px';
+    }
+    // 连续位置比例（0~1），用于拖动时的实时跟手
+    function pctFromX(clientX) {
+      const rect = track.getBoundingClientRect();
+      const tw = thumb.offsetWidth || 26;
+      const usable = Math.max(1, rect.width - tw);
+      const pct = (clientX - rect.left - tw / 2) / usable;
+      return Math.min(1, Math.max(0, pct));
+    }
+    // 吸附到最近的档位索引
+    function idxFromX(clientX) {
+      return Math.round(pctFromX(clientX) * maxIdx);
+    }
+    function highlight(idx) {
+      labels.querySelectorAll('span').forEach(s => s.classList.toggle('active', Number(s.dataset.idx) === idx));
+    }
+    function paint(idx, disabled) {
+      layout(pctOf(idx));
+      root.classList.toggle('disabled', disabled);
+      root.setAttribute('aria-valuenow', String(idx));
+      nameEl.textContent = disabled ? (cfg.disabledText || '—') : cfg.format(values[idx]);
+      if (disabled) labels.querySelectorAll('span').forEach(s => s.classList.remove('active'));
+      else highlight(idx);
+    }
+    function update() {
+      paint(idxOf(cfg.getValue()), cfg.isDisabled ? cfg.isDisabled() : false);
+    }
+
+    root.addEventListener('pointerdown', (e) => {
+      if (cfg.isDisabled && cfg.isDisabled()) return;
+      e.preventDefault();
+      const tRect = thumb.getBoundingClientRect();
+      const onThumb = Math.abs(e.clientX - (tRect.left + tRect.width / 2)) <= 16;
+      if (onThumb) {
+        dragging = true;
+        root.classList.add('dragging');
+        try { root.setPointerCapture(e.pointerId); } catch (err) {}
+      } else {
+        const idx = idxFromX(e.clientX);
+        pendingIdx = idx;
+        root.classList.remove('dragging');
+        void thumb.offsetWidth;
+        requestAnimationFrame(() => {
+          layout(pctOf(idx));
+          nameEl.textContent = cfg.format(values[idx]);
+          highlight(idx);
+        });
+      }
+    });
+    root.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const pct = pctFromX(e.clientX);
+      layout(pct);                                   // 连续跟手，平滑不跳档
+      const idx = Math.round(pct * maxIdx);          // 名称/高亮取最近档位做实时预览
+      nameEl.textContent = cfg.format(values[idx]);
+      highlight(idx);
+    });
+    function endDrag(e) {
+      if (dragging) {
+        dragging = false;
+        root.classList.remove('dragging');
+        void thumb.offsetWidth;                      // 强制重排，确保吸附时的过渡动画生效
+        cfg.onChange(values[idxFromX(e.clientX)]);   // 平滑吸附到最近档位
+      } else if (pendingIdx !== null) {
+        const v = values[pendingIdx];
+        pendingIdx = null;
+        cfg.onChange(v);
+      }
+    }
+    root.addEventListener('pointerup', endDrag);
+    root.addEventListener('pointercancel', () => {
+      if (dragging) { dragging = false; root.classList.remove('dragging'); update(); }
+      pendingIdx = null;
+    });
+    root.addEventListener('keydown', (e) => {
+      if (cfg.isDisabled && cfg.isDisabled()) return;
+      const cur = idxOf(cfg.getValue());
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); cfg.onChange(values[Math.max(0, cur - 1)]); }
+      else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); cfg.onChange(values[Math.min(maxIdx, cur + 1)]); }
+    });
+
+    return { update, relayout: () => layout(pctOf(idxOf(cfg.getValue()))) };
+  }
+
   const DIFF_NAMES = { 1: '入门', 2: '简单', 3: '中等', 4: '困难', 5: '大师' };
-  const DIFF_MIN = 1, DIFF_MAX = 5;
-  let dragging = false;
-  let pendingLevel = null;
 
   function diffValue() {
     return state.mode === 'pvp'
@@ -815,53 +923,33 @@
       : (parseInt(state.mode, 10) || 3);
   }
 
-  function pctFromValue(v) {
-    return (v - DIFF_MIN) / (DIFF_MAX - DIFF_MIN);
-  }
+  const difficultySlider = createSlider({
+    rootId: 'difficulty', trackId: 'difficulty-track', fillId: 'difficulty-fill',
+    thumbId: 'difficulty-thumb', labelsId: 'slider-labels', nameId: 'diff-name',
+    values: [1, 2, 3, 4, 5],
+    format: (v) => DIFF_NAMES[v] || '中等',
+    disabledText: '双人对战',
+    getValue: diffValue,
+    isDisabled: () => state.mode === 'pvp',
+    onChange: (v) => applyDiff(v)
+  });
 
-  // 按进度百分比摆放滑块与填充条
-  function layoutSlider(pct) {
-    const trackW = trackEl.clientWidth;
-    const tw = thumbEl.offsetWidth || 20;
-    const usable = Math.max(0, trackW - tw);
-    const x = tw / 2 + Math.min(1, Math.max(0, pct)) * usable;
-    thumbEl.style.left = x + 'px';
-    fillEl.style.width = x + 'px';
-  }
-
-  // 由鼠标/触摸位置算出连续难度值
-  function valueFromClientX(clientX) {
-    const rect = trackEl.getBoundingClientRect();
-    const tw = thumbEl.offsetWidth || 20;
-    const usable = Math.max(1, rect.width - tw);
-    let pct = (clientX - rect.left - tw / 2) / usable;
-    pct = Math.min(1, Math.max(0, pct));
-    return DIFF_MIN + pct * (DIFF_MAX - DIFF_MIN);
-  }
-
-  function highlightLabel(lvl) {
-    sliderLabels.querySelectorAll('span').forEach(s =>
-      s.classList.toggle('active', String(lvl) === s.dataset.lvl));
-  }
+  const boardSlider = createSlider({
+    rootId: 'board-size', trackId: 'board-track', fillId: 'board-fill',
+    thumbId: 'board-thumb', labelsId: 'board-labels', nameId: 'board-name',
+    values: [13, 15, 19],
+    format: (v) => v + ' 路',
+    getValue: () => state.size,
+    onChange: (v) => applyBoardSize(v)
+  });
 
   function updateDiffUI() {
-    const pvp = state.mode === 'pvp';
-    const lvl = diffValue();
-    layoutSlider(pctFromValue(lvl));
-    sliderEl.classList.toggle('disabled', pvp);
-    sliderEl.setAttribute('aria-valuenow', String(lvl));
-    btnPvp.classList.toggle('active', pvp);
-    diffNameEl.textContent = pvp ? '双人对战' : (DIFF_NAMES[lvl] || '中等');
-    if (pvp) {
-      sliderLabels.querySelectorAll('span').forEach(s => s.classList.remove('active'));
-    } else {
-      highlightLabel(lvl);
-    }
+    difficultySlider.update();
+    btnPvp.classList.toggle('active', state.mode === 'pvp');
   }
 
-  // 应用难度并开新局
   function applyDiff(v) {
-    v = Math.min(DIFF_MAX, Math.max(DIFF_MIN, Math.round(v)));
+    v = Math.min(5, Math.max(1, Math.round(v)));
     if (state.mode === 'pvp') { updateDiffUI(); return; }
     state.mode = String(v);
     updateDiffUI();
@@ -869,65 +957,16 @@
     restart();
   }
 
-  sliderEl.addEventListener('pointerdown', (e) => {
-    if (state.mode === 'pvp') return;
-    e.preventDefault();
-    const tRect = thumbEl.getBoundingClientRect();
-    const onThumb = Math.abs(e.clientX - (tRect.left + tRect.width / 2)) <= 15;
-    if (onThumb) {
-      // 按住滑块 → 实时跟手拖动
-      dragging = true;
-      sliderEl.classList.add('dragging');
-      try { sliderEl.setPointerCapture(e.pointerId); } catch (err) {}
-    } else {
-      // 点击轨道 → 平滑滑过去（CSS 过渡），松手后再应用难度
-      const v = Math.round(valueFromClientX(e.clientX));
-      pendingLevel = v;
-      sliderEl.classList.remove('dragging');
-      // 强制重排，确保 transition 规则先生效，否则会瞬间跳变
-      void thumbEl.offsetWidth;
-      requestAnimationFrame(() => {
-        layoutSlider(pctFromValue(v));
-        diffNameEl.textContent = DIFF_NAMES[v] || '';
-        highlightLabel(v);
-      });
-    }
-  });
-
-  sliderEl.addEventListener('pointermove', (e) => {
-    if (!dragging) return;
-    const v = valueFromClientX(e.clientX);
-    layoutSlider(pctFromValue(v));
-    const r = Math.round(v);
-    diffNameEl.textContent = DIFF_NAMES[r] || '';
-    highlightLabel(r);
-  });
-
-  function endDrag(e) {
-    if (dragging) {
-      dragging = false;
-      sliderEl.classList.remove('dragging');
-      applyDiff(valueFromClientX(e.clientX));
-    } else if (pendingLevel !== null) {
-      const v = pendingLevel;
-      pendingLevel = null;
-      applyDiff(v);
-    }
+  function applyBoardSize(size) {
+    if (size === state.size) { boardSlider.update(); return; }
+    state.size = size;
+    boardSlider.update();
+    saveAuto();
+    restart();
+    fitCanvas();
   }
-  sliderEl.addEventListener('pointerup', endDrag);
-  sliderEl.addEventListener('pointercancel', (e) => {
-    if (dragging) { dragging = false; sliderEl.classList.remove('dragging'); updateDiffUI(); }
-    pendingLevel = null;
-  });
 
-  // 键盘操作（无障碍）
-  sliderEl.addEventListener('keydown', (e) => {
-    if (state.mode === 'pvp') return;
-    const cur = diffValue();
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); applyDiff(cur - 1); }
-    else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); applyDiff(cur + 1); }
-  });
-
+  // 双人 / 人机 切换
   btnPvp.addEventListener('click', () => {
     if (state.mode === 'pvp') {
       state.mode = String(state.lastAiLevel || 3);
@@ -965,11 +1004,6 @@
   bindSwitch('opt-coords', 'coords');
   bindSwitch('opt-sound', 'sound');
 
-  document.getElementById('opt-size').addEventListener('change', (e) => {
-    state.size = parseInt(e.target.value, 10);
-    restart();
-    fitCanvas();
-  });
 
   document.getElementById('opt-side').addEventListener('change', (e) => {
     const mySide = parseInt(e.target.value, 10);
@@ -1063,7 +1097,8 @@
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       fitCanvas();
-      layoutSlider(pctFromValue(diffValue()));
+      difficultySlider.relayout();
+      boardSlider.relayout();
     }, 120);
   }
   window.addEventListener('resize', onResize);
@@ -1077,12 +1112,12 @@
     loadSettings();
     const restored = loadAuto();
     if (!restored) { newBoard(); state.current = BLACK; }
-    document.getElementById('opt-size').value = String(state.size);
     document.getElementById('opt-side').value = String(state.aiSide === WHITE ? BLACK : WHITE);
     document.getElementById('opt-timer-sec').value = String(state.timer.limit);
     // 兼容旧存档：mode 为 'pvp' 或 '1'~'5'
     if (state.mode !== 'pvp' && !DIFF_NAMES[state.mode]) state.mode = '3';
     updateDiffUI();
+    boardSlider.update();
     state.timer.stepStart = Date.now();
     state.timer.lastTick = Date.now();
     fitCanvas();

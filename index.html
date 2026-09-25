@@ -44,6 +44,7 @@
     <div class="controls">
       <div class="difficulty-bar">
         <button id="btn-pvp" class="pvp-toggle" title="切换到双人对战">👥 双人</button>
+
         <div class="slider-wrap">
           <div class="slider-head">
             <span class="slider-title">AI 难度</span>
@@ -58,11 +59,33 @@
             </div>
           </div>
           <div class="slider-labels" id="slider-labels">
-            <span data-lvl="1">入门</span>
-            <span data-lvl="2">简单</span>
-            <span data-lvl="3">中等</span>
-            <span data-lvl="4">困难</span>
-            <span data-lvl="5">大师</span>
+            <span data-idx="0">入门</span>
+            <span data-idx="1">简单</span>
+            <span data-idx="2">中等</span>
+            <span data-idx="3">困难</span>
+            <span data-idx="4">大师</span>
+          </div>
+        </div>
+
+        <div class="slider-sep"></div>
+
+        <div class="slider-wrap slider-wrap-board">
+          <div class="slider-head">
+            <span class="slider-title">棋盘大小</span>
+            <span id="board-name" class="diff-name">15 路</span>
+          </div>
+          <div class="slider" id="board-size" role="slider" tabindex="0"
+               aria-label="棋盘大小" aria-valuemin="0" aria-valuemax="2" aria-valuenow="1">
+            <div class="slider-track" id="board-track">
+              <div class="slider-fill" id="board-fill"></div>
+              <div class="slider-dots"><i></i><i></i><i></i></div>
+              <div class="slider-thumb" id="board-thumb"></div>
+            </div>
+          </div>
+          <div class="slider-labels" id="board-labels">
+            <span data-idx="0">13 路</span>
+            <span data-idx="1">15 路</span>
+            <span data-idx="2">19 路</span>
           </div>
         </div>
       </div>
@@ -100,14 +123,6 @@
         <label class="row">
           <span>禁手规则<small>黑棋禁止三三 / 四四 / 长连</small></span>
           <input type="checkbox" id="opt-forbidden" class="switch">
-        </label>
-        <label class="row">
-          <span>棋盘大小</span>
-          <select id="opt-size">
-            <option value="13">13 × 13</option>
-            <option value="15" selected>15 × 15</option>
-            <option value="19">19 × 19</option>
-          </select>
         </label>
         <label class="row">
           <span>我执<small>人机模式下你走哪一方</small></span>
