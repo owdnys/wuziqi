@@ -60,10 +60,45 @@
     forbidmark: false,
     coords: true,
     sound: true,
-    theme: 'midnight'
+    theme: 'midnight',
+    glass: true,
+    bgBlobs: true,
+    bgFollow: true
   };
 
   const THEMES = ['midnight', 'wood', 'paper', 'ink'];
+
+  // 玻璃拟态开关
+  function applyGlass() {
+    document.documentElement.setAttribute('data-glass', opts.glass ? 'on' : 'off');
+  }
+
+  // 背景光斑 / 鼠标跟随开关
+  function applyBg() {
+    document.documentElement.setAttribute('data-blobs', opts.bgBlobs === false ? 'off' : 'on');
+    document.documentElement.setAttribute('data-follow',
+      (opts.bgFollow && opts.bgBlobs !== false && opts.glass) ? 'on' : 'off');
+  }
+
+  /* ---------- 背景光晕跟随鼠标（平滑跟随，静止后自动停止动画） ---------- */
+  let mx = 50, my = 42, tmx = 50, tmy = 42, bgRaf = null;
+  function bgLoop() {
+    const dx = tmx - mx, dy = tmy - my;
+    if (Math.abs(dx) < 0.06 && Math.abs(dy) < 0.06) { bgRaf = null; return; }
+    mx += dx * 0.09;
+    my += dy * 0.09;
+    const root = document.documentElement.style;
+    root.setProperty('--mx', mx.toFixed(2) + '%');
+    root.setProperty('--my', my.toFixed(2) + '%');
+    bgRaf = requestAnimationFrame(bgLoop);
+  }
+  function onPointerMove(e) {
+    if (!opts.bgFollow || opts.bgBlobs === false || !opts.glass) return;
+    tmx = (e.clientX / window.innerWidth) * 100;
+    tmy = (e.clientY / window.innerHeight) * 100;
+    if (!bgRaf) bgRaf = requestAnimationFrame(bgLoop);
+  }
+  window.addEventListener('pointermove', onPointerMove, { passive: true });
 
   // 读取 CSS 变量（棋盘配色由主题决定）
   function cssVar(name, fallback) {
@@ -618,6 +653,11 @@
     } catch (e) {}
     document.documentElement.setAttribute('data-theme', opts.theme);
     applyTheme();
+    applyGlass();
+    applyBg();
+    document.getElementById('opt-glass').checked = opts.glass !== false;
+    document.getElementById('opt-blobs').checked = opts.bgBlobs !== false;
+    document.getElementById('opt-follow').checked = opts.bgFollow !== false;
     document.getElementById('opt-forbidden').checked = opts.forbidden;
     document.getElementById('opt-numbers').checked = opts.numbers;
     document.getElementById('opt-lastmark').checked = opts.lastmark;
@@ -907,13 +947,17 @@
   document.getElementById('play-again').addEventListener('click', restart);
   document.getElementById('btn-review').addEventListener('click', () => modal.classList.add('hidden'));
 
-  const bindSwitch = (id, key) => {
+  const bindSwitch = (id, key, after) => {
     document.getElementById(id).addEventListener('change', (e) => {
       opts[key] = e.target.checked;
       saveSettings();
+      if (typeof after === 'function') after();
       draw();
     });
   };
+  bindSwitch('opt-glass', 'glass', () => { applyGlass(); applyBg(); });
+  bindSwitch('opt-blobs', 'bgBlobs', applyBg);
+  bindSwitch('opt-follow', 'bgFollow', applyBg);
   bindSwitch('opt-forbidden', 'forbidden');
   bindSwitch('opt-numbers', 'numbers');
   bindSwitch('opt-lastmark', 'lastmark');
