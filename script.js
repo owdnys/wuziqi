@@ -17,7 +17,13 @@
   const scoreEl = document.getElementById('score');
   const thinkingEl = document.getElementById('thinking');
   const hintTipEl = document.getElementById('hint-tip');
-  const modeGroup = document.getElementById('mode-group');
+  const sliderEl = document.getElementById('difficulty');
+  const trackEl = document.getElementById('difficulty-track');
+  const fillEl = document.getElementById('difficulty-fill');
+  const thumbEl = document.getElementById('difficulty-thumb');
+  const diffNameEl = document.getElementById('diff-name');
+  const sliderLabels = document.getElementById('slider-labels');
+  const btnPvp = document.getElementById('btn-pvp');
   const modal = document.getElementById('result-modal');
   const resultTitle = document.getElementById('result-title');
   const resultSub = document.getElementById('result-sub');
@@ -54,8 +60,26 @@
     forbidmark: false,
     coords: true,
     sound: true,
-    theme: 'dark'
+    theme: 'midnight'
   };
+
+  const THEMES = ['midnight', 'wood', 'paper', 'ink'];
+
+  // 读取 CSS 变量（棋盘配色由主题决定）
+  function cssVar(name, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  }
+
+  function applyTheme() {
+    // 兼容旧存档中的主题名（dark/light → 新主题）
+    if (!THEMES.includes(opts.theme)) {
+      opts.theme = opts.theme === 'light' ? 'paper' : 'midnight';
+    }
+    document.documentElement.setAttribute('data-theme', opts.theme);
+    document.querySelectorAll('.theme-swatch').forEach(b =>
+      b.classList.toggle('active', b.dataset.theme === opts.theme));
+  }
 
   let CELL = 40, MARGIN = 36, LOGICAL = 620;
 
@@ -92,13 +116,14 @@
     const n = state.size;
     const L = LOGICAL;
 
-    const g = ctx.createLinearGradient(0, 0, L, L);
-    if (opts.theme === 'light') { g.addColorStop(0, '#f0c98c'); g.addColorStop(1, '#dfa963'); }
-    else { g.addColorStop(0, '#e2b06e'); g.addColorStop(1, '#c8904f'); }
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, L, L);
+    // 清空为透明，透出 CSS 中的棋盘背景（随主题变化）
+    ctx.clearRect(0, 0, L, L);
 
-    ctx.strokeStyle = opts.theme === 'light' ? 'rgba(120,80,40,.75)' : 'rgba(122,82,48,.95)';
+    const lineColor = cssVar('--board-line', 'rgba(122,82,48,.95)');
+    const starColor = cssVar('--board-star', 'rgba(93,58,26,.95)');
+    const coordColor = cssVar('--board-coord', '#8a6138');
+
+    ctx.strokeStyle = lineColor;
     ctx.lineWidth = Math.max(1, CELL * 0.03);
     for (let i = 0; i < n; i++) {
       const p = MARGIN + i * CELL;
@@ -106,7 +131,7 @@
       ctx.beginPath(); ctx.moveTo(p, MARGIN); ctx.lineTo(p, MARGIN + (n - 1) * CELL); ctx.stroke();
     }
 
-    ctx.fillStyle = opts.theme === 'light' ? 'rgba(110,70,30,.85)' : 'rgba(93,58,26,.95)';
+    ctx.fillStyle = starColor;
     for (const [r, c] of starPoints(n)) {
       ctx.beginPath();
       ctx.arc(MARGIN + c * CELL, MARGIN + r * CELL, Math.max(2, CELL * 0.1), 0, Math.PI * 2);
@@ -114,7 +139,7 @@
     }
 
     if (opts.coords && CELL >= 18) {
-      ctx.fillStyle = opts.theme === 'light' ? '#8a6438' : '#8a6138';
+      ctx.fillStyle = coordColor;
       ctx.font = `${Math.max(9, Math.round(CELL * 0.3))}px "Microsoft YaHei", sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -592,6 +617,7 @@
       if (raw) Object.assign(opts, JSON.parse(raw));
     } catch (e) {}
     document.documentElement.setAttribute('data-theme', opts.theme);
+    applyTheme();
     document.getElementById('opt-forbidden').checked = opts.forbidden;
     document.getElementById('opt-numbers').checked = opts.numbers;
     document.getElementById('opt-lastmark').checked = opts.lastmark;
@@ -720,18 +746,157 @@
   document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeDrawers));
 
   document.getElementById('btn-theme').addEventListener('click', () => {
-    opts.theme = opts.theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', opts.theme);
-    saveSettings(); draw();
+    const idx = THEMES.indexOf(opts.theme);
+    opts.theme = THEMES[(idx + 1) % THEMES.length];
+    applyTheme();
+    saveSettings();
+    draw();
   });
 
-  modeGroup.addEventListener('click', (e) => {
-    const btn = e.target.closest('.mode-btn');
+  // 主题选择器
+  document.getElementById('theme-picker').addEventListener('click', (e) => {
+    const btn = e.target.closest('.theme-swatch');
     if (!btn) return;
-    const mode = btn.dataset.mode;
-    if (mode === state.mode) return;
-    state.mode = mode;
-    document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    opts.theme = btn.dataset.theme;
+    applyTheme();
+    saveSettings();
+    draw();
+  });
+
+  /* ---------- 难度滑块（自定义：点击平滑滑动 / 拖动跟手 / 松手吸附档位） ---------- */
+  const DIFF_NAMES = { 1: '入门', 2: '简单', 3: '中等', 4: '困难', 5: '大师' };
+  const DIFF_MIN = 1, DIFF_MAX = 5;
+  let dragging = false;
+  let pendingLevel = null;
+
+  function diffValue() {
+    return state.mode === 'pvp'
+      ? (parseInt(state.lastAiLevel, 10) || 3)
+      : (parseInt(state.mode, 10) || 3);
+  }
+
+  function pctFromValue(v) {
+    return (v - DIFF_MIN) / (DIFF_MAX - DIFF_MIN);
+  }
+
+  // 按进度百分比摆放滑块与填充条
+  function layoutSlider(pct) {
+    const trackW = trackEl.clientWidth;
+    const tw = thumbEl.offsetWidth || 20;
+    const usable = Math.max(0, trackW - tw);
+    const x = tw / 2 + Math.min(1, Math.max(0, pct)) * usable;
+    thumbEl.style.left = x + 'px';
+    fillEl.style.width = x + 'px';
+  }
+
+  // 由鼠标/触摸位置算出连续难度值
+  function valueFromClientX(clientX) {
+    const rect = trackEl.getBoundingClientRect();
+    const tw = thumbEl.offsetWidth || 20;
+    const usable = Math.max(1, rect.width - tw);
+    let pct = (clientX - rect.left - tw / 2) / usable;
+    pct = Math.min(1, Math.max(0, pct));
+    return DIFF_MIN + pct * (DIFF_MAX - DIFF_MIN);
+  }
+
+  function highlightLabel(lvl) {
+    sliderLabels.querySelectorAll('span').forEach(s =>
+      s.classList.toggle('active', String(lvl) === s.dataset.lvl));
+  }
+
+  function updateDiffUI() {
+    const pvp = state.mode === 'pvp';
+    const lvl = diffValue();
+    layoutSlider(pctFromValue(lvl));
+    sliderEl.classList.toggle('disabled', pvp);
+    sliderEl.setAttribute('aria-valuenow', String(lvl));
+    btnPvp.classList.toggle('active', pvp);
+    diffNameEl.textContent = pvp ? '双人对战' : (DIFF_NAMES[lvl] || '中等');
+    if (pvp) {
+      sliderLabels.querySelectorAll('span').forEach(s => s.classList.remove('active'));
+    } else {
+      highlightLabel(lvl);
+    }
+  }
+
+  // 应用难度并开新局
+  function applyDiff(v) {
+    v = Math.min(DIFF_MAX, Math.max(DIFF_MIN, Math.round(v)));
+    if (state.mode === 'pvp') { updateDiffUI(); return; }
+    state.mode = String(v);
+    updateDiffUI();
+    saveAuto();
+    restart();
+  }
+
+  sliderEl.addEventListener('pointerdown', (e) => {
+    if (state.mode === 'pvp') return;
+    e.preventDefault();
+    const tRect = thumbEl.getBoundingClientRect();
+    const onThumb = Math.abs(e.clientX - (tRect.left + tRect.width / 2)) <= 15;
+    if (onThumb) {
+      // 按住滑块 → 实时跟手拖动
+      dragging = true;
+      sliderEl.classList.add('dragging');
+      try { sliderEl.setPointerCapture(e.pointerId); } catch (err) {}
+    } else {
+      // 点击轨道 → 平滑滑过去（CSS 过渡），松手后再应用难度
+      const v = Math.round(valueFromClientX(e.clientX));
+      pendingLevel = v;
+      sliderEl.classList.remove('dragging');
+      // 强制重排，确保 transition 规则先生效，否则会瞬间跳变
+      void thumbEl.offsetWidth;
+      requestAnimationFrame(() => {
+        layoutSlider(pctFromValue(v));
+        diffNameEl.textContent = DIFF_NAMES[v] || '';
+        highlightLabel(v);
+      });
+    }
+  });
+
+  sliderEl.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const v = valueFromClientX(e.clientX);
+    layoutSlider(pctFromValue(v));
+    const r = Math.round(v);
+    diffNameEl.textContent = DIFF_NAMES[r] || '';
+    highlightLabel(r);
+  });
+
+  function endDrag(e) {
+    if (dragging) {
+      dragging = false;
+      sliderEl.classList.remove('dragging');
+      applyDiff(valueFromClientX(e.clientX));
+    } else if (pendingLevel !== null) {
+      const v = pendingLevel;
+      pendingLevel = null;
+      applyDiff(v);
+    }
+  }
+  sliderEl.addEventListener('pointerup', endDrag);
+  sliderEl.addEventListener('pointercancel', (e) => {
+    if (dragging) { dragging = false; sliderEl.classList.remove('dragging'); updateDiffUI(); }
+    pendingLevel = null;
+  });
+
+  // 键盘操作（无障碍）
+  sliderEl.addEventListener('keydown', (e) => {
+    if (state.mode === 'pvp') return;
+    const cur = diffValue();
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); applyDiff(cur - 1); }
+    else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); applyDiff(cur + 1); }
+  });
+
+  btnPvp.addEventListener('click', () => {
+    if (state.mode === 'pvp') {
+      state.mode = String(state.lastAiLevel || 3);
+    } else {
+      state.lastAiLevel = state.mode;
+      state.mode = 'pvp';
+    }
+    updateDiffUI();
+    saveAuto();
     restart();
   });
 
@@ -852,7 +1017,10 @@
   let resizeTimer = null;
   function onResize() {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(fitCanvas, 120);
+    resizeTimer = setTimeout(() => {
+      fitCanvas();
+      layoutSlider(pctFromValue(diffValue()));
+    }, 120);
   }
   window.addEventListener('resize', onResize);
   window.addEventListener('orientationchange', () => setTimeout(fitCanvas, 260));
@@ -868,7 +1036,9 @@
     document.getElementById('opt-size').value = String(state.size);
     document.getElementById('opt-side').value = String(state.aiSide === WHITE ? BLACK : WHITE);
     document.getElementById('opt-timer-sec').value = String(state.timer.limit);
-    document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === state.mode));
+    // 兼容旧存档：mode 为 'pvp' 或 '1'~'5'
+    if (state.mode !== 'pvp' && !DIFF_NAMES[state.mode]) state.mode = '3';
+    updateDiffUI();
     state.timer.stepStart = Date.now();
     state.timer.lastTick = Date.now();
     fitCanvas();

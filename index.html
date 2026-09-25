@@ -42,19 +42,35 @@
 
     <!-- ===== 控制区 ===== -->
     <div class="controls">
-      <div class="mode-group" id="mode-group">
-        <button class="mode-btn" data-mode="pvp">👥 双人</button>
-        <button class="mode-btn" data-mode="1">入门</button>
-        <button class="mode-btn" data-mode="2">简单</button>
-        <button class="mode-btn active" data-mode="3">中等</button>
-        <button class="mode-btn" data-mode="4">困难</button>
-        <button class="mode-btn" data-mode="5">大师</button>
+      <div class="difficulty-bar">
+        <button id="btn-pvp" class="pvp-toggle" title="切换到双人对战">👥 双人</button>
+        <div class="slider-wrap">
+          <div class="slider-head">
+            <span class="slider-title">AI 难度</span>
+            <span id="diff-name" class="diff-name">中等</span>
+          </div>
+          <div class="slider" id="difficulty" role="slider" tabindex="0"
+               aria-label="AI 难度" aria-valuemin="1" aria-valuemax="5" aria-valuenow="3">
+            <div class="slider-track" id="difficulty-track">
+              <div class="slider-fill" id="difficulty-fill"></div>
+              <div class="slider-dots"><i></i><i></i><i></i><i></i><i></i></div>
+              <div class="slider-thumb" id="difficulty-thumb"></div>
+            </div>
+          </div>
+          <div class="slider-labels" id="slider-labels">
+            <span data-lvl="1">入门</span>
+            <span data-lvl="2">简单</span>
+            <span data-lvl="3">中等</span>
+            <span data-lvl="4">困难</span>
+            <span data-lvl="5">大师</span>
+          </div>
+        </div>
       </div>
       <div class="btn-row">
         <button id="btn-undo" title="悔棋 (Ctrl+Z)">↩ 悔棋</button>
         <button id="btn-redo" title="重做 (Ctrl+Y)">↪ 重做</button>
         <button id="btn-hint" title="提示一手">💡 提示</button>
-        <button id="btn-restart" class="primary" title="重新开局 (R)">🔄 重开</button>
+        <button id="btn-restart" title="重新开局 (R)">🔄 重开</button>
       </div>
     </div>
   </div>
@@ -69,6 +85,16 @@
       <button class="icon-btn" data-close>✕</button>
     </div>
     <div class="drawer-body">
+      <section class="group">
+        <h3>外观主题</h3>
+        <div class="theme-picker" id="theme-picker">
+          <button class="theme-swatch" data-theme="midnight">🌌 深空</button>
+          <button class="theme-swatch" data-theme="wood">🪵 暖木</button>
+          <button class="theme-swatch" data-theme="paper">📄 米白</button>
+          <button class="theme-swatch" data-theme="ink">🀄 水墨</button>
+        </div>
+      </section>
+
       <section class="group">
         <h3>对局规则</h3>
         <label class="row">
